@@ -4,7 +4,10 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 
 ## Features
 - Interactive OpenStreetMap/Leaflet map, marker clusters, search, source colors, and camera list
-- Caltrans District 10 by default; select any of Caltrans Districts 1–12
+- **All Caltrans districts** selected by default, with individual filters for Districts 1–12 (District 6 = Madera, District 10 = Merced). Requests up to three feeds in parallel and places nearby cameras first.
+- Corrected Caltrans camera JSON filenames to the official zero-padded D01–D09 scheme; includes fallback to official Caltrans GIS data where needed.
+- **Madera** and **Dos Palos** map shortcuts, plus GPS marker, map-position search and nearby-sorted results.
+- For performance, only camera pins inside/near the current visible map view are rendered; lists can still search all loaded California cameras.
 - Uses Caltrans' published direct HLS `.m3u8` URLs and JPEG snapshots, *not* the QuickMap interface
 - ALERTCalifornia camera layer (UC San Diego; public wildfire cameras)
 - Cal OES public webcams catalog for additional public sources; these may be external webpage links rather than embeddable video
@@ -34,4 +37,8 @@ Public listings are **not** physical camera IP addresses. A camera can be in the
 No API keys, backend, or user accounts are required for the initial public sources. The browser connects to the agencies' endpoints, so connectivity/agency policies affect reliability. Never store sensitive personal or company camera URLs in a public repo. Custom entries/favorites stay in this device's localStorage.
 
 ## Status
-Prototype v0.3 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+Prototype v0.4 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+
+## Camera data troubleshooting
+
+The primary source uses https://cwwp2.dot.ca.gov/data/d6/cctv/cctvStatusD06.json for Madera (District 6), not `cctvStatusD6.json`. A browser's network/CORS problems can still affect a subset of districts; the app attempts the agency GIS backup and reports unavailable districts in the camera list. The **All California** selection loads public feed directories, not restricted camera IP addresses. If some listings are offline or not public, these cameras may have no working playable video even when their map marker is present.
