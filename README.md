@@ -10,6 +10,7 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 - Cal OES public webcams catalog for additional public sources; these may be external webpage links rather than embeddable video
 - Add a manually verified, **public and authorized** camera on the map, stored only in your browser
 - One-camera-at-a-time playback to conserve phone data; locally saved favorites
+- **Opt-in live GPS**: Start GPS shows your blue location marker and a radius representing reported horizontal accuracy; map initially centers on you and follows subsequent movement. Drag the map to pause following; tap **Follow me** to resume. **Stop GPS** removes your marker and stops position updates.
 - Display source and stream type so a camera is not mistaken for Caltrans
 
 ## Try it
@@ -27,7 +28,9 @@ Or use a static HTTP server locally, e.g. `python -m http.server 8000`, and visi
 
 Public listings are **not** physical camera IP addresses. A camera can be in the directory but have no playable stream. Providers may change streams, restrict browser playback (CORS), or take devices offline. The app doesn't bypass authorization, authentication or access restrictions, doesn't save video, and never scans camera networks. If an external provider prevents embedding, use **Open provider page** or **Open feed**.
 
+**GPS privacy and requirements:** Location permission is requested only after tapping **Start GPS**. GPS uses the browser's `watchPosition()` while this page is open (it does not promise background tracking). Coordinates are not saved in GitHub or browser storage and are not sent to camera endpoints; however, as with any slippy map, tile servers can infer the viewed geographic area from the map tiles requested. Press **Stop GPS** to clear the location marker and stop updates. GPS requires HTTPS or localhost, location permission, and OS/browser location services. Accuracy is a browser estimate, not a navigation guarantee.
+
 No API keys, backend, or user accounts are required for the initial public sources. The browser connects to the agencies' endpoints, so connectivity/agency policies affect reliability. Never store sensitive personal or company camera URLs in a public repo. Custom entries/favorites stay in this device's localStorage.
 
 ## Status
-Prototype v0.1 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+Prototype v0.2 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
