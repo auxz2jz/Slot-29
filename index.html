@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1629">
+  <meta name="description" content="Explore publicly published Caltrans, ALERTCalifornia and other open camera feeds on one interactive map.">
+  <title>Open Camera Map · Slot-29</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%B9%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://cwwp2.dot.ca.gov">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.1</span></h1><p>Public camera feeds · independent viewer</p></div></div>
+      <div class="top-actions">
+        <button id="nearBtn" title="Find your location (requires permission)">◎ <span class="optional">My location</span></button>
+        <button id="addBtn" class="primary" title="Add an authorized public camera">＋ <span>Add camera</span></button>
+      </div>
+    </header>
+    <section class="controls" aria-label="Camera filters">
+      <label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" autocomplete="off" placeholder="Search road, city, camera, source…" aria-label="Search cameras"></label>
+      <label class="select-wrap"><span>Source</span><select id="sourceFilter" aria-label="Filter by source">
+        <option value="all">All sources</option><option value="caltrans">Caltrans</option><option value="alertca">ALERTCalifornia</option><option value="caloes">Cal OES / other</option><option value="custom">My added cameras</option><option value="favorites">★ Favorites</option>
+      </select></label>
+      <label class="select-wrap"><span>Caltrans</span><select id="district" aria-label="Select Caltrans district"><option value="10">District 10 · Central Valley</option><option value="1">District 1</option><option value="2">District 2</option><option value="3">District 3</option><option value="4">District 4</option><option value="5">District 5</option><option value="6">District 6</option><option value="7">District 7</option><option value="8">District 8</option><option value="9">District 9</option><option value="11">District 11</option><option value="12">District 12</option></select></label>
+      <button id="refreshBtn" title="Reload camera locations from public sources">↻ Refresh</button>
+      <button id="localBtn" title="Zoom to Dos Palos and Merced">⌖ Local area</button>
+    </section>
+    <div class="workarea">
+      <main class="map-panel">
+        <div id="map" role="application" aria-label="Map of public camera locations"></div>
+        <div class="map-legend" aria-label="Map symbol legend"><span><i class="dot caltrans"></i>Caltrans</span><span><i class="dot alertca"></i>ALERTCalifornia</span><span><i class="dot caloes"></i>Other / Cal OES</span><span><i class="dot custom"></i>My cameras</span></div>
+        <div class="map-note">Map &copy; OpenStreetMap contributors · Feeds belong to the named operators</div>
+      </main>
+      <aside class="sidebar" aria-label="Search results">
+        <div class="sidebar-head">
+          <div><strong id="resultCount">Finding cameras…</strong><small id="status">Connecting to public directories</small></div>
+          <button id="onlyViewBtn" aria-pressed="false" title="Only show cameras within current map view">☐ In map</button>
+        </div>
+        <div id="camList" class="cam-list" aria-live="polite"></div>
+      </aside>
+    </div>
+    <footer class="footer"><span><strong>Public feeds only.</strong> Direct streams may not play in every browser. No recording or camera control.</span><a href="https://github.com/auxz2jz/Slot-29" target="_blank" rel="noopener noreferrer">GitHub source</a></footer>
+  </div>
+
+  <dialog id="viewer" class="viewer">
+    <div class="viewer-bar"><div><span id="viewTag" class="tag"></span><h2 id="viewTitle">Camera</h2><p id="viewMeta"></p></div><button id="closeViewer" class="icon-button" aria-label="Close camera">✕</button></div>
+    <div id="mediaBox" class="media-box"><p>Select a camera.</p></div>
+    <div class="viewer-actions"><button id="playBtn" class="primary">▶ Play live</button><button id="snapshotBtn">▧ Still image</button><button id="favBtn">☆ Favorite</button></div>
+    <p id="mediaStatus" class="media-status" role="status"></p>
+    <div class="viewer-links"><a id="directLink" target="_blank" rel="noopener noreferrer" hidden>Open direct feed ↗</a><a id="operatorLink" target="_blank" rel="noopener noreferrer" hidden>Open provider page ↗</a><button id="removeCustom" class="danger-text" hidden>Remove my camera</button></div>
+  </dialog>
+
+  <dialog id="addDialog" class="add-dialog">
+    <form id="addForm" method="dialog">
+      <div class="dialog-head"><h2>Add authorized public camera</h2><button type="button" id="closeAdd" class="icon-button" aria-label="Close form">✕</button></div>
+      <p>Add only feeds the operator has deliberately published for public access. This entry is saved locally on this device.</p>
+      <label>Camera name<input id="newName" required maxlength="120" placeholder="e.g. Community weather webcam"></label>
+      <label>Public URL (direct HLS, JPEG/MJPEG or website)<input id="newURL" required type="url" placeholder="https://example.org/public-camera.m3u8"></label>
+      <label>Operator / attribution<input id="newOperator" maxlength="100" placeholder="City, agency or webcam owner"></label>
+      <label>Provider webpage (optional)<input id="newPage" type="url" placeholder="https://example.org/webcams"></label>
+      <div class="coord-grid"><label>Latitude<input id="newLat" required type="number" min="-90" max="90" step="any" placeholder="37.05"></label><label>Longitude<input id="newLng" required type="number" min="-180" max="180" step="any" placeholder="-120.64"></label></div>
+      <button type="button" id="pinBtn">⌖ Choose position on map</button>
+      <div id="addError" class="error-text" role="alert"></div>
+      <div class="dialog-buttons"><button type="button" id="cancelAdd">Cancel</button><button type="submit" class="primary">Save camera</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
