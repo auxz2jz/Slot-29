@@ -41,3 +41,8 @@
 /* v0.4 camera directory includes all districts and labels their location */
 .select-wrap select#district{max-width:228px}
 @media(max-width:680px){.select-wrap select#district{max-width:190px}#dosPalosBtn{font-size:11px;padding:7px}}
+
+/* v0.5 All Cameras default and visible reset control */
+.all-cameras-btn{background:#164a79;border-color:#398cce;color:#eaf5ff;font-weight:700}
+.all-cameras-btn:hover{background:#216199}
+@media(max-width:680px){.all-cameras-btn{font-size:11px;padding:7px}}
