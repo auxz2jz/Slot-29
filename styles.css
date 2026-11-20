@@ -9,3 +9,31 @@
 #nearBtn.gps-on{background:#125d9b;border-color:#3ab7ff}
 .own-location{filter:drop-shadow(0 1px 4px #0a224288)}
 @media(max-width:680px){.gps-overlay{top:7px;right:7px;max-width:calc(100% - 55px);gap:4px}.gps-status{font-size:10px;padding:6px 7px;max-width:174px}#followBtn{padding:6px 7px;font-size:10px}}
+
+/* v0.3 local full-screen viewing: never navigate to the provider */
+.media-stage{position:relative;width:100%;background:#050d17}
+.media-stage:fullscreen,.media-stage.fullscreen-fallback{
+  width:100vw;width:100dvw;height:100vh;height:100dvh;
+  max-width:none;max-height:none;aspect-ratio:auto;
+  background:#000;display:flex;align-items:center;justify-content:center;
+}
+.media-stage:fullscreen{padding:0;margin:0}
+.media-stage.fullscreen-fallback{position:fixed;inset:0;z-index:10000}
+.media-stage:fullscreen .media-box,.media-stage.fullscreen-fallback .media-box{
+  aspect-ratio:auto;width:100%;height:100%;background:#000;
+}
+.media-stage:fullscreen video,.media-stage.fullscreen-fallback video,
+.media-stage:fullscreen img,.media-stage.fullscreen-fallback img{
+  display:block;width:100%;height:100%;object-fit:contain;
+}
+.exit-fullscreen-btn{
+  position:absolute;right:max(12px,env(safe-area-inset-right));
+  top:max(12px,env(safe-area-inset-top));z-index:20;
+  background:#12273cdc;border:1px solid #7fa5c2;padding:10px 14px;
+  font-size:14px;font-weight:700;box-shadow:0 2px 12px #0008;
+}
+.exit-fullscreen-btn[hidden]{display:none!important}
+#fullscreenBtn[aria-pressed="true"]{border-color:#80b7ee;background:#22527d}
+@media(max-width:680px){
+  .exit-fullscreen-btn{top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));padding:8px 11px;font-size:12px}
+}
