@@ -10,6 +10,7 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 - Cal OES public webcams catalog for additional public sources; these may be external webpage links rather than embeddable video
 - Add a manually verified, **public and authorized** camera on the map, stored only in your browser
 - One-camera-at-a-time playback to conserve phone data; locally saved favorites
+- **Full-screen camera viewing in the same website:** Tap **⛶ Full screen** in the camera viewer to expand its currently playing HLS video or image. Tap **✕ Exit full screen** or the browser Back/Escape control to return to the player and map. No redirect to Caltrans or an outside provider is required. Uses the browser Fullscreen API where available, with an in-page overlay fallback (including browsers that disallow fullscreen for non-video elements).
 - **Opt-in live GPS**: Start GPS shows your blue location marker and a radius representing reported horizontal accuracy; map initially centers on you and follows subsequent movement. Drag the map to pause following; tap **Follow me** to resume. **Stop GPS** removes your marker and stops position updates.
 - Display source and stream type so a camera is not mistaken for Caltrans
 
@@ -33,4 +34,4 @@ Public listings are **not** physical camera IP addresses. A camera can be in the
 No API keys, backend, or user accounts are required for the initial public sources. The browser connects to the agencies' endpoints, so connectivity/agency policies affect reliability. Never store sensitive personal or company camera URLs in a public repo. Custom entries/favorites stay in this device's localStorage.
 
 ## Status
-Prototype v0.2 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+Prototype v0.3 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
