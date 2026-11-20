@@ -1,9 +1,13 @@
-/* Open Camera Map v0.3 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.4 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const LOCAL = [37.055, -120.63];
+  const LOCAL = [36.959, -120.057];
+  const DOS_PALOS = [37.055, -120.63];
+  const ALL_DISTRICTS = [6,10,3,4,5,7,8,2,1,9,11,12];
+  const districtCache = new Map();
+  let caltransProgress = "";
   const DISTRICT_CENTERS = {
     1:[40.75,-123.1],2:[40.55,-122.3],3:[39.0,-121.2],4:[37.75,-122.25],
     5:[35.4,-120.3],6:[36.7,-119.65],7:[34.05,-118.25],8:[34.3,-117.35],
@@ -118,35 +122,86 @@
       page:"https://quickmap.dot.ca.gov/"
     });
   }
-  async function loadCaltrans() {
-    const seq = ++loadSeq, district = Number($("district").value);
-    sourceErrors.caltrans = "";
-    updateStatus("Loading Caltrans District " + district + "…");
+  // Official filenames use D01 ... D09 for districts 1–9, not D1 ... D9.
+  // Madera County is District 6 and Merced County is District 10.
+  async function fetchCaltransDistrict(district, bypassCache) {
+    if (!bypassCache && districtCache.has(district)) {
+      return {cams:districtCache.get(district),warning:""};
+    }
     let cams = [];
+    let warning = "";
     try {
-      const endpoint = "https://cwwp2.dot.ca.gov/data/d" + district + "/cctv/cctvStatusD" + district + ".json";
-      const data = await fetchJson(endpoint);
-      if (!Array.isArray(data.data)) throw new Error("Unexpected camera data structure");
-      cams = data.data.map((x) => normalizeDistrictJson(x,district)).filter(Boolean);
-      if (!cams.length) throw new Error("No valid cameras in feed");
+      const padded = String(district).padStart(2,"0");
+      const endpoint = "https://cwwp2.dot.ca.gov/data/d" + district + "/cctv/cctvStatusD" + padded + ".json";
+      const data = await fetchJson(endpoint,18000);
+      if (!Array.isArray(data.data)) throw new Error("Unexpected Caltrans JSON structure");
+      cams = data.data.map((row) => normalizeDistrictJson(row,district)).filter(Boolean);
+      if (!cams.length) throw new Error("No valid camera positions reported");
     } catch (primaryError) {
+      // Official statewide GIS fallback for browser/network issues affecting a district's JSON file.
       try {
         const endpoint = parameters(GIS_CALTRANS, {
           where:"district = " + district, outFields:"*", returnGeometry:"false",
           resultRecordCount:2000, f:"json"
         });
-        const data = await fetchJson(endpoint);
-        cams = (data.features || []).map((x) => normalizeDistrictArc(x,district)).filter(Boolean);
-        if (!cams.length) throw new Error("Backup directory has no cameras");
-        sourceErrors.caltrans = "Caltrans primary JSON unavailable; using official GIS backup.";
+        const data = await fetchJson(endpoint,18000);
+        cams = (data.features || []).map((row) => normalizeDistrictArc(row,district)).filter(Boolean);
+        if (!cams.length) throw new Error("GIS backup returned no cameras");
+        warning = "D" + district + " using GIS backup";
       } catch (secondaryError) {
-        sourceErrors.caltrans = "Caltrans directory unavailable: " + secondaryError.message;
+        throw new Error("D" + district + ": primary " + primaryError.message + "; backup " + secondaryError.message);
       }
     }
+    districtCache.set(district,cams);
+    return {cams,warning};
+  }
+  async function loadCaltrans(options) {
+    const seq = ++loadSeq;
+    const selection = $("district").value;
+    const districts = selection === "all" ? ALL_DISTRICTS : [Number(selection)];
+    const bypassCache = Boolean(options && options.refresh);
+    const all = [];
+    const warnings = [], failures = [];
+    let completed = 0;
+    sources.caltrans = [];
+    sourceErrors.caltrans = "";
+    caltransProgress = "Loading Caltrans · 0/" + districts.length + " districts";
+    render();
+    // Load the closest counties first, with at most three simultaneous public requests.
+    const concurrency = Math.min(3,districts.length);
+    let pointer = 0;
+    async function worker() {
+      while (pointer < districts.length && seq === loadSeq) {
+        const district = districts[pointer++];
+        try {
+          const result = await fetchCaltransDistrict(district,bypassCache);
+          if (seq !== loadSeq) return;
+          all.push(...result.cams);
+          if (result.warning) warnings.push(result.warning);
+        } catch (error) {
+          if (seq !== loadSeq) return;
+          failures.push(error.message);
+        }
+        if (seq !== loadSeq) return;
+        completed++;
+        // Incremental results put Madera and Merced cameras on the map immediately.
+        sources.caltrans = all.slice();
+        caltransProgress = completed < districts.length
+          ? "Loading Caltrans · " + completed + "/" + districts.length + " districts"
+          : "";
+        sourceErrors.caltrans = failures.length ? "Unavailable: " + failures.map((x) => x.split(":")[0]).join(", ") : "";
+        render();
+      }
+    }
+    await Promise.all(Array.from({length:concurrency},() => worker()));
     if (seq !== loadSeq) return;
-    sources.caltrans = cams;
+    caltransProgress = "";
+    sourceErrors.caltrans = failures.length
+      ? "Could not load " + failures.length + " district(s): " + failures.map((x) => x.split(":")[0]).join(", ")
+      : warnings.length ? "Some districts are using Caltrans GIS backup: " + warnings.join(", ") : "";
     render();
   }
+
   function currentEnvelope() {
     const b = map.getBounds().pad(.22);
     return {xmin:b.getWest(),ymin:b.getSouth(),xmax:b.getEast(),ymax:b.getNorth(),spatialReference:{wkid:4326}};
@@ -282,7 +337,7 @@
     const filteredCount = filtered().length;
     $("resultCount").textContent = count ? filteredCount + " of " + count + " cameras" : "Looking for cameras…";
     const failures = Object.values(sourceErrors).filter(Boolean);
-    $("status").textContent = message || (failures.length ? failures.join(" · ") : "Blue: Caltrans · Orange: wildfire · Teal: other");
+    $("status").textContent = [message || caltransProgress, failures.length ? failures.join(" · ") : ""].filter(Boolean).join(" · ") || "Blue: Caltrans · Orange: wildfire · Teal: other";
   }
   function render() {
     if (!cluster) return;
@@ -290,7 +345,9 @@
     cluster.clearLayers();
     const frag = document.createDocumentFragment();
     // Markers for all matching entries, not just the list's 100 entries.
+    const visibleBounds = map.getBounds().pad(0.35);
     shown.forEach((cam) => {
+      if (!visibleBounds.contains([cam.lat,cam.lng])) return;
       const icon = L.divIcon({
         html:'<span class="camera-marker ' + cam.source + '">' + SOURCE_INFO[cam.source].icon + "</span>",
         className:"", iconSize:[24,24], iconAnchor:[12,12]
@@ -558,18 +615,34 @@
     $("sourceFilter").addEventListener("change",render);
     $("search").addEventListener("input",render);
     $("district").addEventListener("change",() => {
-      const id = Number($("district").value);
+      const selectedDistrict = $("district").value;
       $("search").value = "";
-      map.setView(DISTRICT_CENTERS[id] || LOCAL,8);
+      if (selectedDistrict !== "all") {
+        const id = Number(selectedDistrict);
+        map.setView(DISTRICT_CENTERS[id] || LOCAL,id === 6 ? 9 : 8);
+      }
+      // All districts preserves the map position and shows cameras nearest that position first.
       loadCaltrans();
     });
     $("refreshBtn").addEventListener("click",() => {
       sourceErrors.caltrans = sourceErrors.alertca = sourceErrors.caloes = "";
-      loadCaltrans(); loadOtherSources(); toast("Refreshing public camera listings");
+      loadCaltrans({refresh:true}); loadOtherSources(); toast("Refreshing public camera listings");
     });
     $("localBtn").addEventListener("click",() => {
-      $("district").value = "10"; $("search").value = "";
-      map.setView(LOCAL,10); loadCaltrans(); render();
+      $("search").value = ""; onlyWithinMap = false;
+      $("onlyViewBtn").classList.remove("active");
+      $("onlyViewBtn").setAttribute("aria-pressed","false");
+      $("onlyViewBtn").textContent = "☐ In map";
+      if (gpsWatchId !== null) { gpsFollow = false; updateFollowButton(); }
+      map.setView(LOCAL,11); render();
+    });
+    $("dosPalosBtn").addEventListener("click",() => {
+      $("search").value = ""; onlyWithinMap = false;
+      $("onlyViewBtn").classList.remove("active");
+      $("onlyViewBtn").setAttribute("aria-pressed","false");
+      $("onlyViewBtn").textContent = "☐ In map";
+      if (gpsWatchId !== null) { gpsFollow = false; updateFollowButton(); }
+      map.setView(DOS_PALOS,10); render();
     });
     $("onlyViewBtn").addEventListener("click",() => {
       onlyWithinMap = !onlyWithinMap;
@@ -659,7 +732,7 @@
     $("status").textContent = "Map library did not load. Check your internet connection.";
     return;
   }
-  const map = L.map("map",{zoomControl:true,preferCanvas:true}).setView(LOCAL,10);
+  const map = L.map("map",{zoomControl:true,preferCanvas:true}).setView(LOCAL,11);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
     maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
@@ -667,7 +740,7 @@
     ? L.markerClusterGroup({showCoverageOnHover:false, maxClusterRadius:45, disableClusteringAtZoom:14})
     : L.layerGroup();
   map.addLayer(cluster);
-  map.on("moveend",() => { if (onlyWithinMap) render(); scheduleOtherSources(); });
+  map.on("moveend",() => { render(); scheduleOtherSources(); });
   map.on("dragstart",() => {
     if (gpsWatchId !== null && gpsFollow) {
       gpsFollow = false;
