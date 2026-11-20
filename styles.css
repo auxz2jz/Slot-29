@@ -37,3 +37,7 @@
 @media(max-width:680px){
   .exit-fullscreen-btn{top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));padding:8px 11px;font-size:12px}
 }
+
+/* v0.4 camera directory includes all districts and labels their location */
+.select-wrap select#district{max-width:228px}
+@media(max-width:680px){.select-wrap select#district{max-width:190px}#dosPalosBtn{font-size:11px;padding:7px}}
