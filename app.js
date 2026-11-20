@@ -1,4 +1,4 @@
-/* Open Camera Map v0.4 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.5 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
@@ -26,6 +26,9 @@
   const sourceErrors = {caltrans:"",alertca:"",caloes:""};
   const STORAGE_CUSTOM = "openCameraMapCustom_v1";
   const STORAGE_FAV = "openCameraMapFav_v1";
+  const STORAGE_GPS_ENABLED = "openCameraMapGpsEnabled_v1";
+  const GPS_POLL_MS = 20000;
+  const GPS_STALE_MS = 60000;
   let favorites = new Set(safeRead(STORAGE_FAV, []));
   let selected = null, currentHls = null, currentTimer = null;
   let loadSeq = 0, othersSeq = 0, delayedOthers = 0, toastTimer = 0;
@@ -33,10 +36,24 @@
   let cluster;
   let gpsWatchId = null, gpsMarker = null, gpsAccuracyCircle = null;
   let gpsFollow = true, gpsFirstFix = true, gpsLastFix = null;
+  let gpsWatchGeneration = 0, gpsSession = 0;
+  let gpsMonitorTimer = null, gpsCheckInFlight = false;
+  let gpsLastReceivedAt = 0, gpsLastAccuracy = 0;
+  let gpsMonitorTick = 0;
+  let caltransDistrictsLoaded = new Set();
 
   function safeRead(key, fallback) {
     try { const parsed = JSON.parse(localStorage.getItem(key)); return Array.isArray(parsed) ? parsed : fallback; }
     catch (_) { return fallback; }
+  }
+  function safeReadPreference(key) {
+    try { return localStorage.getItem(key) === "true"; } catch (_) { return false; }
+  }
+  function writeGPSPreference(enabled) {
+    try {
+      if (enabled) localStorage.setItem(STORAGE_GPS_ENABLED, "true");
+      else localStorage.removeItem(STORAGE_GPS_ENABLED);
+    } catch (_) { /* Tracking still works without localStorage. */ }
   }
   function safeWrite(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -100,7 +117,7 @@
     const l = x.location, im = x.imageData || {}, st = im.static || {};
     return normalized({
       id:"caltrans:" + district + ":" + x.index,
-      source:"caltrans", name:l.locationName, operator:"Caltrans District " + district,
+      district, source:"caltrans", name:l.locationName, operator:"Caltrans District " + district,
       lat:l.latitude, lng:l.longitude, location:[l.nearbyPlace,l.county ? l.county + " County" : ""].filter(Boolean).join(" · "),
       route:l.route, stream:im.streamingVideoURL, snapshot:st.currentImageURL,
       refresh:Number(st.currentImageUpdateFrequency) || 2,
@@ -112,7 +129,7 @@
     const a = row.attributes || {};
     return normalized({
       id:"caltrans:" + district + ":" + (a.index_ || a.OBJECTID),
-      source:"caltrans", name:a.locationName, operator:"Caltrans District " + district,
+      district, source:"caltrans", name:a.locationName, operator:"Caltrans District " + district,
       lat:a.latitude || (row.geometry && row.geometry.y),
       lng:a.longitude || (row.geometry && row.geometry.x),
       location:[a.nearbyPlace,a.county ? a.county + " County" : ""].filter(Boolean).join(" · "),
@@ -157,13 +174,22 @@
   }
   async function loadCaltrans(options) {
     const seq = ++loadSeq;
-    const selection = $("district").value;
-    const districts = selection === "all" ? ALL_DISTRICTS : [Number(selection)];
+    // Always acquire the complete statewide directory. District is a display filter only.
+    const districts = ALL_DISTRICTS;
     const bypassCache = Boolean(options && options.refresh);
     const all = [];
     const warnings = [], failures = [];
     let completed = 0;
-    sources.caltrans = [];
+    caltransDistrictsLoaded = new Set();
+    // Keep loaded results visible during refresh; replace as each district finishes.
+    const byDistrict = new Map();
+    if (!(options && options.refresh)) {
+      sources.caltrans.forEach((cam) => {
+        if (!byDistrict.has(cam.district)) byDistrict.set(cam.district, []);
+        byDistrict.get(cam.district).push(cam);
+      });
+    }
+    sources.caltrans = Array.from(byDistrict.values()).flat();
     sourceErrors.caltrans = "";
     caltransProgress = "Loading Caltrans · 0/" + districts.length + " districts";
     render();
@@ -176,7 +202,9 @@
         try {
           const result = await fetchCaltransDistrict(district,bypassCache);
           if (seq !== loadSeq) return;
-          all.push(...result.cams);
+          byDistrict.set(district,result.cams);
+          all.splice(0,all.length,...Array.from(byDistrict.values()).flat());
+          caltransDistrictsLoaded.add(district);
           if (result.warning) warnings.push(result.warning);
         } catch (error) {
           if (seq !== loadSeq) return;
@@ -293,7 +321,12 @@
   }
   function sourceMatches(camera) {
     const filter = $("sourceFilter").value;
-    return filter === "all" || (filter === "favorites" ? favorites.has(camera.id) : camera.source === filter);
+    if (filter !== "all" && (filter === "favorites" ? !favorites.has(camera.id) : camera.source !== filter)) return false;
+    // Search must never be restricted by the optional district display filter.
+    const searching = $("search").value.trim().length > 0;
+    const district = $("district").value;
+    if (!searching && camera.source === "caltrans" && district !== "all" && camera.district !== Number(district)) return false;
+    return true;
   }
   function textMatches(camera) {
     const input = $("search").value.trim().toLowerCase();
@@ -337,7 +370,8 @@
     const filteredCount = filtered().length;
     $("resultCount").textContent = count ? filteredCount + " of " + count + " cameras" : "Looking for cameras…";
     const failures = Object.values(sourceErrors).filter(Boolean);
-    $("status").textContent = [message || caltransProgress, failures.length ? failures.join(" · ") : ""].filter(Boolean).join(" · ") || "Blue: Caltrans · Orange: wildfire · Teal: other";
+    const directoryState = "Caltrans " + caltransDistrictsLoaded.size + "/12 districts loaded";
+    $("status").textContent = [message || caltransProgress || directoryState, failures.length ? failures.join(" · ") : ""].filter(Boolean).join(" · ");
   }
   function render() {
     if (!cluster) return;
@@ -509,9 +543,9 @@
   }
   // GPS is opt-in. Precise coordinates are held only in memory, never in localStorage,
   // camera requests, camera URLs, analytics, or the GitHub repository.
-  function gpsSetStatus(message) {
-    $("gpsStatus").textContent = message;
-  }
+  // GPS is explicitly opt-in. Only its on/off preference is persisted, not GPS coordinates.
+  // Browsers can pause watches when screen/page is inactive; foreground reactivation is best-effort.
+  function gpsSetStatus(message) { $("gpsStatus").textContent = message; }
   function updateFollowButton() {
     const button = $("followBtn");
     button.disabled = gpsWatchId === null;
@@ -519,30 +553,53 @@
     button.textContent = gpsFollow ? "⌖ Following" : "⌖ Follow me";
     button.classList.toggle("gps-following", gpsFollow && gpsWatchId !== null);
   }
-  function stopGPS() {
+  function gpsLiveLabel() {
+    const ageSec = Math.floor((Date.now() - gpsLastReceivedAt) / 1000);
+    const age = ageSec < 3 ? "just now" : ageSec < 60 ? ageSec + "s ago" : Math.floor(ageSec/60) + "m ago";
+    return "● GPS " + (gpsLastReceivedAt && ageSec > 60 ? "stale" : "live") + " · ±" + Math.round(gpsLastAccuracy || 0) + " m · " + age;
+  }
+  function clearGPSWatch() {
+    gpsWatchGeneration++;
     if (gpsWatchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(gpsWatchId);
+      try { navigator.geolocation.clearWatch(gpsWatchId); } catch (_) {}
     }
     gpsWatchId = null;
+  }
+  function stopGPS(preservePreference) {
+    gpsSession++;
+    clearGPSWatch();
+    if (gpsMonitorTimer !== null) clearInterval(gpsMonitorTimer);
+    gpsMonitorTimer = null;
+    gpsCheckInFlight = false;
+    gpsMonitorTick = 0;
     gpsLastFix = null;
+    gpsLastReceivedAt = 0;
+    gpsLastAccuracy = 0;
     gpsFirstFix = true;
     gpsFollow = true;
+    if (!preservePreference) writeGPSPreference(false);
     if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
     if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
     $("nearBtn").textContent = "◎ Start GPS";
     $("nearBtn").setAttribute("aria-pressed", "false");
     $("nearBtn").classList.remove("gps-on");
-    gpsSetStatus("GPS off");
+    gpsSetStatus(preservePreference ? "GPS paused" : "GPS off");
     updateFollowButton();
   }
   function onGPSPosition(position) {
-    if (gpsWatchId === null) return; // Ignore stale callbacks after Stop.
+    if (gpsWatchId === null) return;
     const coords = position && position.coords;
     if (!coords || !validPosition(coords.latitude, coords.longitude)) {
       gpsSetStatus("GPS returned an invalid position"); return;
     }
-    const location = [coords.latitude, coords.longitude];
-    const accuracy = Number.isFinite(coords.accuracy) ? Math.max(1,coords.accuracy) : 0;
+    const sourceTimestamp = Number(position.timestamp) || Date.now();
+    if (Date.now() - sourceTimestamp > 120000) {
+      gpsSetStatus("GPS returned an old location; trying again…");
+      return;
+    }
+    gpsLastReceivedAt = Date.now();
+    gpsLastAccuracy = Number.isFinite(coords.accuracy) ? Math.max(1,coords.accuracy) : 0;
+    const location = [coords.latitude, coords.longitude], accuracy = gpsLastAccuracy;
     gpsLastFix = location;
     if (!gpsAccuracyCircle) {
       gpsAccuracyCircle = L.circle(location,{
@@ -558,17 +615,15 @@
         radius:8, color:"#fff", weight:3, fillColor:"#087af5", fillOpacity:1,
         className:"own-location", pane:"markerPane"
       }).addTo(map);
-    } else {
-      gpsMarker.setLatLng(location);
-    }
-    const updated = new Date(position.timestamp || Date.now()).toLocaleTimeString();
-    const label = "You are here" + (accuracy ? " · accuracy ±" + Math.round(accuracy) + " m" : "") + " · " + updated;
-    gpsMarker.bindTooltip(label, {direction:"top",offset:[0,-10]});
+    } else gpsMarker.setLatLng(location);
+    const label = "You are here" + (accuracy ? " · accuracy ±" + Math.round(accuracy) + " m" : "") +
+      " · " + new Date(sourceTimestamp).toLocaleTimeString();
+    gpsMarker.bindTooltip(label,{direction:"top",offset:[0,-10]});
     gpsMarker.bindPopup(label + "<br>GPS position stays on this device.");
-    gpsSetStatus("● GPS live" + (accuracy ? " · ±" + Math.round(accuracy) + " m" : "") + " · " + updated);
+    gpsSetStatus(gpsLiveLabel());
     if (gpsFollow) {
-      if (gpsFirstFix) map.setView(location, Math.max(map.getZoom(), accuracy > 250 ? 12 : 14));
-      else map.panTo(location, {animate:false});
+      if (gpsFirstFix) map.setView(location,Math.max(map.getZoom(),accuracy > 250 ? 12 : 14));
+      else map.panTo(location,{animate:false});
     }
     gpsFirstFix = false;
   }
@@ -576,39 +631,109 @@
     if (gpsWatchId === null) return;
     if (error && error.code === 1) {
       stopGPS();
-      gpsSetStatus("Location denied — enable GPS permission for this site");
-      toast("Location permission denied. Allow location in your browser settings.");
+      gpsSetStatus("Location denied — permit access in your browser");
+      toast("Location access denied; browser permission required");
     } else if (error && error.code === 2) {
-      gpsSetStatus("GPS unavailable — check device location settings");
+      gpsSetStatus("GPS signal unavailable · retrying");
     } else if (error && error.code === 3) {
-      gpsSetStatus("Waiting for GPS signal — location timed out");
-    } else {
-      gpsSetStatus("GPS could not obtain a location");
-    }
+      gpsSetStatus("GPS timeout · retrying automatically");
+    } else gpsSetStatus("GPS interrupted · retrying automatically");
   }
-  function startGPS() {
-    if (gpsWatchId !== null) return;
-    if (!navigator.geolocation || !window.isSecureContext) {
-      gpsSetStatus("GPS needs HTTPS and a browser with location support");
-      toast("Location needs HTTPS and geolocation support"); return;
-    }
-    gpsFollow = true; gpsFirstFix = true;
-    gpsSetStatus("Requesting GPS access…");
+  function attachGPSWatch() {
+    clearGPSWatch();
+    if (!navigator.geolocation) return;
+    const generation = gpsWatchGeneration;
     try {
       gpsWatchId = navigator.geolocation.watchPosition(
-        onGPSPosition, onGPSError,
-        {enableHighAccuracy:true,maximumAge:5000,timeout:20000}
+        position => { if (generation === gpsWatchGeneration) onGPSPosition(position); },
+        error => { if (generation === gpsWatchGeneration) onGPSError(error); },
+        {enableHighAccuracy:true, maximumAge:0, timeout:30000}
       );
     } catch (error) {
-      gpsWatchId = null;
-      gpsSetStatus("Unable to start GPS");
-      toast("GPS could not start: " + error.message);
+      gpsSetStatus("Unable to start GPS watch");
+      return;
+    }
+    updateFollowButton();
+  }
+  function requestGPSRefresh() {
+    if (gpsWatchId === null || gpsCheckInFlight || document.hidden) return;
+    gpsCheckInFlight = true;
+    const session = gpsSession;
+    try {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          if (session === gpsSession && gpsWatchId !== null) onGPSPosition(position);
+          if (session === gpsSession) gpsCheckInFlight = false;
+        },
+        error => {
+          if (session === gpsSession && gpsWatchId !== null) onGPSError(error);
+          if (session === gpsSession) gpsCheckInFlight = false;
+        },
+        {enableHighAccuracy:true,maximumAge:0,timeout:25000}
+      );
+    } catch (_) { gpsCheckInFlight = false; }
+  }
+  function gpsMonitor() {
+    if (gpsWatchId === null || document.hidden) return;
+    gpsMonitorTick++;
+    const age = gpsLastReceivedAt ? Date.now() - gpsLastReceivedAt : Infinity;
+    if (gpsLastReceivedAt) gpsSetStatus(gpsLiveLabel());
+    if (age > 30000 || gpsMonitorTick % 3 === 0) requestGPSRefresh();
+    if (age > GPS_STALE_MS && gpsMonitorTick % 3 === 0) {
+      // Restart a stalled browser watch; getCurrentPosition is a separate fallback.
+      gpsSetStatus("GPS signal stale · reconnecting");
+      attachGPSWatch();
+    }
+  }
+  function startGPS(options) {
+    if (gpsWatchId !== null) return;
+    if (!navigator.geolocation || !window.isSecureContext) {
+      gpsSetStatus("GPS needs HTTPS and device location support");
+      toast("Location needs HTTPS and browser geolocation"); return;
+    }
+    const restored = Boolean(options && options.restored);
+    if (!restored) writeGPSPreference(true);
+    gpsSession++;
+    gpsFollow = true; gpsFirstFix = true; gpsLastReceivedAt = 0; gpsMonitorTick = 0;
+    gpsSetStatus(restored ? "Resuming saved GPS preference…" : "Requesting GPS access…");
+    attachGPSWatch();
+    if (gpsWatchId === null) {
+      if (!restored) writeGPSPreference(false);
       return;
     }
     $("nearBtn").textContent = "■ Stop GPS";
-    $("nearBtn").setAttribute("aria-pressed", "true");
+    $("nearBtn").setAttribute("aria-pressed","true");
     $("nearBtn").classList.add("gps-on");
+    if (gpsMonitorTimer !== null) clearInterval(gpsMonitorTimer);
+    gpsMonitorTimer = setInterval(gpsMonitor,GPS_POLL_MS);
     updateFollowButton();
+  }
+  async function resumeConsentedGPS() {
+    if (!navigator.geolocation || !window.isSecureContext) return;
+    // Avoid an unexpected prompt if a user revoked or lost prior permission.
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const permission = await navigator.permissions.query({name:"geolocation"});
+        if (!safeReadPreference(STORAGE_GPS_ENABLED) || gpsWatchId !== null) return;
+        if (permission.state !== "granted") {
+          gpsSetStatus("GPS was enabled before · tap Start GPS to allow location");
+          return;
+        }
+      } catch (_) {
+        gpsSetStatus("GPS was enabled before · tap Start GPS");
+        return;
+      }
+    } else {
+      gpsSetStatus("GPS was enabled before · tap Start GPS to resume");
+      return;
+    }
+    startGPS({restored:true});
+  }
+  function gpsReturnToForeground() {
+    if (document.hidden || gpsWatchId === null) return;
+    // Mobile browsers may stop their watch when put in the background.
+    if (!gpsLastReceivedAt || Date.now() - gpsLastReceivedAt > 30000) attachGPSWatch();
+    requestGPSRefresh();
   }
 
   function setupEvents() {
@@ -616,13 +741,22 @@
     $("search").addEventListener("input",render);
     $("district").addEventListener("change",() => {
       const selectedDistrict = $("district").value;
-      $("search").value = "";
-      if (selectedDistrict !== "all") {
+      if (selectedDistrict !== "all" && !$("search").value.trim()) {
         const id = Number(selectedDistrict);
         map.setView(DISTRICT_CENTERS[id] || LOCAL,id === 6 ? 9 : 8);
       }
-      // All districts preserves the map position and shows cameras nearest that position first.
-      loadCaltrans();
+      // Switching districts only filters already loaded statewide data. Search still spans all districts.
+      render();
+    });
+    $("allCamerasBtn").addEventListener("click",() => {
+      $("district").value = "all";
+      $("sourceFilter").value = "all";
+      $("onlyViewBtn").setAttribute("aria-pressed", "false");
+      $("onlyViewBtn").classList.remove("active");
+      $("onlyViewBtn").textContent = "☐ In map";
+      onlyWithinMap = false;
+      render();
+      toast("Showing all public camera sources and all 12 Caltrans districts");
     });
     $("refreshBtn").addEventListener("click",() => {
       sourceErrors.caltrans = sourceErrors.alertca = sourceErrors.caloes = "";
@@ -654,6 +788,8 @@
     $("nearBtn").addEventListener("click",() => {
       if (gpsWatchId === null) startGPS(); else stopGPS();
     });
+    document.addEventListener("visibilitychange",gpsReturnToForeground);
+    window.addEventListener("pageshow",gpsReturnToForeground);
     $("followBtn").addEventListener("click",() => {
       if (gpsWatchId === null) return;
       gpsFollow = !gpsFollow;
@@ -756,9 +892,14 @@
     $("addDialog").showModal();
     toast("Location selected; add the public feed URL");
   });
+  // Browser form restoration can override an HTML selected option. Explicitly initialize both filters.
+  $("sourceFilter").value = "all";
+  $("district").value = "all";
   setupEvents();
   loadCustom();
   render();
   loadCaltrans();
   loadOtherSources();
+  // User-consented GPS preference survives a reload; coordinates do not.
+  if (safeReadPreference(STORAGE_GPS_ENABLED)) resumeConsentedGPS();
 })();
