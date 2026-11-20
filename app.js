@@ -1,4 +1,4 @@
-/* Open Camera Map v0.1 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.2 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
@@ -26,7 +26,9 @@
   let selected = null, currentHls = null, currentTimer = null;
   let loadSeq = 0, othersSeq = 0, delayedOthers = 0, toastTimer = 0;
   let onlyWithinMap = false, placingPin = false;
-  let cluster, userPositionMarker;
+  let cluster;
+  let gpsWatchId = null, gpsMarker = null, gpsAccuracyCircle = null;
+  let gpsFollow = true, gpsFirstFix = true, gpsLastFix = null;
 
   function safeRead(key, fallback) {
     try { const parsed = JSON.parse(localStorage.getItem(key)); return Array.isArray(parsed) ? parsed : fallback; }
@@ -412,6 +414,110 @@
   function saveCustom(cam) {
     sources.custom.push(cam); safeWrite(STORAGE_CUSTOM,sources.custom); render();
   }
+  // GPS is opt-in. Precise coordinates are held only in memory, never in localStorage,
+  // camera requests, camera URLs, analytics, or the GitHub repository.
+  function gpsSetStatus(message) {
+    $("gpsStatus").textContent = message;
+  }
+  function updateFollowButton() {
+    const button = $("followBtn");
+    button.disabled = gpsWatchId === null;
+    button.setAttribute("aria-pressed", String(gpsFollow));
+    button.textContent = gpsFollow ? "⌖ Following" : "⌖ Follow me";
+    button.classList.toggle("gps-following", gpsFollow && gpsWatchId !== null);
+  }
+  function stopGPS() {
+    if (gpsWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+    }
+    gpsWatchId = null;
+    gpsLastFix = null;
+    gpsFirstFix = true;
+    gpsFollow = true;
+    if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
+    if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
+    $("nearBtn").textContent = "◎ Start GPS";
+    $("nearBtn").setAttribute("aria-pressed", "false");
+    $("nearBtn").classList.remove("gps-on");
+    gpsSetStatus("GPS off");
+    updateFollowButton();
+  }
+  function onGPSPosition(position) {
+    if (gpsWatchId === null) return; // Ignore stale callbacks after Stop.
+    const coords = position && position.coords;
+    if (!coords || !validPosition(coords.latitude, coords.longitude)) {
+      gpsSetStatus("GPS returned an invalid position"); return;
+    }
+    const location = [coords.latitude, coords.longitude];
+    const accuracy = Number.isFinite(coords.accuracy) ? Math.max(1,coords.accuracy) : 0;
+    gpsLastFix = location;
+    if (!gpsAccuracyCircle) {
+      gpsAccuracyCircle = L.circle(location,{
+        radius:accuracy || 25, color:"#167ad7", weight:1, opacity:.6,
+        fillColor:"#3596eb", fillOpacity:.14, interactive:false
+      }).addTo(map);
+    } else {
+      gpsAccuracyCircle.setLatLng(location);
+      if (accuracy) gpsAccuracyCircle.setRadius(accuracy);
+    }
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker(location,{
+        radius:8, color:"#fff", weight:3, fillColor:"#087af5", fillOpacity:1,
+        className:"own-location", pane:"markerPane"
+      }).addTo(map);
+    } else {
+      gpsMarker.setLatLng(location);
+    }
+    const updated = new Date(position.timestamp || Date.now()).toLocaleTimeString();
+    const label = "You are here" + (accuracy ? " · accuracy ±" + Math.round(accuracy) + " m" : "") + " · " + updated;
+    gpsMarker.bindTooltip(label, {direction:"top",offset:[0,-10]});
+    gpsMarker.bindPopup(label + "<br>GPS position stays on this device.");
+    gpsSetStatus("● GPS live" + (accuracy ? " · ±" + Math.round(accuracy) + " m" : "") + " · " + updated);
+    if (gpsFollow) {
+      if (gpsFirstFix) map.setView(location, Math.max(map.getZoom(), accuracy > 250 ? 12 : 14));
+      else map.panTo(location, {animate:false});
+    }
+    gpsFirstFix = false;
+  }
+  function onGPSError(error) {
+    if (gpsWatchId === null) return;
+    if (error && error.code === 1) {
+      stopGPS();
+      gpsSetStatus("Location denied — enable GPS permission for this site");
+      toast("Location permission denied. Allow location in your browser settings.");
+    } else if (error && error.code === 2) {
+      gpsSetStatus("GPS unavailable — check device location settings");
+    } else if (error && error.code === 3) {
+      gpsSetStatus("Waiting for GPS signal — location timed out");
+    } else {
+      gpsSetStatus("GPS could not obtain a location");
+    }
+  }
+  function startGPS() {
+    if (gpsWatchId !== null) return;
+    if (!navigator.geolocation || !window.isSecureContext) {
+      gpsSetStatus("GPS needs HTTPS and a browser with location support");
+      toast("Location needs HTTPS and geolocation support"); return;
+    }
+    gpsFollow = true; gpsFirstFix = true;
+    gpsSetStatus("Requesting GPS access…");
+    try {
+      gpsWatchId = navigator.geolocation.watchPosition(
+        onGPSPosition, onGPSError,
+        {enableHighAccuracy:true,maximumAge:5000,timeout:20000}
+      );
+    } catch (error) {
+      gpsWatchId = null;
+      gpsSetStatus("Unable to start GPS");
+      toast("GPS could not start: " + error.message);
+      return;
+    }
+    $("nearBtn").textContent = "■ Stop GPS";
+    $("nearBtn").setAttribute("aria-pressed", "true");
+    $("nearBtn").classList.add("gps-on");
+    updateFollowButton();
+  }
+
   function setupEvents() {
     $("sourceFilter").addEventListener("change",render);
     $("search").addEventListener("input",render);
@@ -437,13 +543,13 @@
       render();
     });
     $("nearBtn").addEventListener("click",() => {
-      if (!navigator.geolocation) { toast("Location not available in this browser"); return; }
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const ll = [pos.coords.latitude,pos.coords.longitude]; map.setView(ll,12);
-        if (userPositionMarker) map.removeLayer(userPositionMarker);
-        userPositionMarker = L.circleMarker(ll,{radius:7,color:"#fff",fillColor:"#178ddd",fillOpacity:1}).addTo(map);
-        userPositionMarker.bindTooltip("My approximate location");
-      },() => toast("Location permission denied or unavailable"),{enableHighAccuracy:false,timeout:12000});
+      if (gpsWatchId === null) startGPS(); else stopGPS();
+    });
+    $("followBtn").addEventListener("click",() => {
+      if (gpsWatchId === null) return;
+      gpsFollow = !gpsFollow;
+      updateFollowButton();
+      if (gpsFollow && gpsLastFix) map.panTo(gpsLastFix, {animate:true});
     });
     $("closeViewer").addEventListener("click",closeCamera);
     $("viewer").addEventListener("close",destroyMedia);
@@ -518,6 +624,12 @@
     : L.layerGroup();
   map.addLayer(cluster);
   map.on("moveend",() => { if (onlyWithinMap) render(); scheduleOtherSources(); });
+  map.on("dragstart",() => {
+    if (gpsWatchId !== null && gpsFollow) {
+      gpsFollow = false;
+      updateFollowButton();
+    }
+  });
   map.on("click",(ev) => {
     if (!placingPin) return;
     placingPin = false;
