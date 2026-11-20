@@ -45,8 +45,9 @@
     return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
   }
   function mediaKind(url) {
-    if (!url) return "link";
-    const path = (new URL(url)).pathname.toLowerCase();
+    const cleaned = validUrl(url);
+    if (!cleaned) return "link";
+    const path = (new URL(cleaned)).pathname.toLowerCase();
     if (path.endsWith(".m3u8")) return "hls";
     if (/\.(jpg|jpeg|png|webp|gif)$/.test(path)) return "image";
     if (/mjpeg|mjpg/.test(path)) return "mjpeg";
@@ -328,7 +329,7 @@
   function showSnapshot() {
     if (!selected) return;
     destroyMedia();
-    const url = selected.snapshot || (selected.kind === "image" ? selected.stream : "");
+    const url = selected.snapshot || (["image","mjpeg"].includes(selected.kind) ? selected.stream : "");
     if (!url) {
       $("mediaBox").append(el("p","","No public still image published for this camera. Use the provider link below."));
       setMediaStatus("Image unavailable · operator page may offer live video.");
