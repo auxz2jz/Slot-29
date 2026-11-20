@@ -16,7 +16,7 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.2</span></h1><p>Public camera feeds · independent viewer</p></div></div>
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.3</span></h1><p>Public camera feeds · independent viewer</p></div></div>
       <div class="top-actions">
         <button id="nearBtn" type="button" aria-pressed="false" title="Start live GPS location on this map">◎ Start GPS</button>
         <button id="addBtn" class="primary" title="Add an authorized public camera">＋ <span>Add camera</span></button>
@@ -51,8 +51,8 @@
 
   <dialog id="viewer" class="viewer">
     <div class="viewer-bar"><div><span id="viewTag" class="tag"></span><h2 id="viewTitle">Camera</h2><p id="viewMeta"></p></div><button id="closeViewer" class="icon-button" aria-label="Close camera">✕</button></div>
-    <div id="mediaBox" class="media-box"><p>Select a camera.</p></div>
-    <div class="viewer-actions"><button id="playBtn" class="primary">▶ Play live</button><button id="snapshotBtn">▧ Still image</button><button id="favBtn">☆ Favorite</button></div>
+    <div id="mediaStage" class="media-stage"><div id="mediaBox" class="media-box"><p>Select a camera.</p></div><button id="exitFullscreenBtn" type="button" class="exit-fullscreen-btn" hidden aria-label="Exit full screen">✕ Exit full screen</button></div>
+    <div class="viewer-actions"><button id="playBtn" class="primary">▶ Play live</button><button id="snapshotBtn">▧ Still image</button><button id="fullscreenBtn" type="button" aria-pressed="false" title="Expand video or snapshot within the website">⛶ Full screen</button><button id="favBtn">☆ Favorite</button></div>
     <p id="mediaStatus" class="media-status" role="status"></p>
     <div class="viewer-links"><a id="directLink" target="_blank" rel="noopener noreferrer" hidden>Open direct feed ↗</a><a id="operatorLink" target="_blank" rel="noopener noreferrer" hidden>Open provider page ↗</a><button id="removeCustom" class="danger-text" hidden>Remove my camera</button></div>
   </dialog>
