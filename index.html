@@ -16,9 +16,9 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.1</span></h1><p>Public camera feeds · independent viewer</p></div></div>
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.2</span></h1><p>Public camera feeds · independent viewer</p></div></div>
       <div class="top-actions">
-        <button id="nearBtn" title="Find your location (requires permission)">◎ <span class="optional">My location</span></button>
+        <button id="nearBtn" type="button" aria-pressed="false" title="Start live GPS location on this map">◎ Start GPS</button>
         <button id="addBtn" class="primary" title="Add an authorized public camera">＋ <span>Add camera</span></button>
       </div>
     </header>
@@ -34,6 +34,7 @@
     <div class="workarea">
       <main class="map-panel">
         <div id="map" role="application" aria-label="Map of public camera locations"></div>
+        <div class="gps-overlay"><div id="gpsStatus" class="gps-status" role="status" aria-live="polite">GPS off</div><button id="followBtn" type="button" aria-pressed="true" disabled title="Keep the map centered on your live GPS position">⌖ Follow me</button></div>
         <div class="map-legend" aria-label="Map symbol legend"><span><i class="dot caltrans"></i>Caltrans</span><span><i class="dot alertca"></i>ALERTCalifornia</span><span><i class="dot caloes"></i>Other / Cal OES</span><span><i class="dot custom"></i>My cameras</span></div>
         <div class="map-note">Map &copy; OpenStreetMap contributors · Feeds belong to the named operators</div>
       </main>
@@ -45,7 +46,7 @@
         <div id="camList" class="cam-list" aria-live="polite"></div>
       </aside>
     </div>
-    <footer class="footer"><span><strong>Public feeds only.</strong> Direct streams may not play in every browser. No recording or camera control.</span><a href="https://github.com/auxz2jz/Slot-29" target="_blank" rel="noopener noreferrer">GitHub source</a></footer>
+    <footer class="footer"><span><strong>Public feeds only.</strong> GPS coordinates are not saved or sent to a camera service. Map tiles still load from OpenStreetMap. No recording or camera control.</span><a href="https://github.com/auxz2jz/Slot-29" target="_blank" rel="noopener noreferrer">GitHub source</a></footer>
   </div>
 
   <dialog id="viewer" class="viewer">
