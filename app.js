@@ -1,4 +1,4 @@
-/* Open Camera Map v0.2 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.3 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
@@ -389,6 +389,7 @@
     a.hidden = !safe; if (safe) a.href = safe; else a.removeAttribute("href");
   }
   function openCamera(cam) {
+    exitLocalFullscreen();
     selected = cam; destroyMedia();
     $("viewTag").replaceWith(tag(cam.source));
     // The replaced badge must retain its stable ID for future selections.
@@ -408,7 +409,42 @@
     }
     if (!$("viewer").open) $("viewer").showModal();
   }
+  function isLocalFullscreen() {
+    const stage = $("mediaStage");
+    return document.fullscreenElement === stage || stage.classList.contains("fullscreen-fallback");
+  }
+  function syncFullscreenControls() {
+    const active = isLocalFullscreen();
+    $("fullscreenBtn").setAttribute("aria-pressed", String(active));
+    $("fullscreenBtn").textContent = active ? "⛶ Exit full screen" : "⛶ Full screen";
+    $("exitFullscreenBtn").hidden = !active;
+  }
+  function exitLocalFullscreen() {
+    // Exit only the full-screen state owned by our camera, not another element.
+    $("mediaStage").classList.remove("fullscreen-fallback");
+    if (document.fullscreenElement === $("mediaStage") && document.exitFullscreen) {
+      const pending = document.exitFullscreen();
+      if (pending && typeof pending.catch === "function") pending.catch(() => {});
+    }
+    syncFullscreenControls();
+  }
+  async function toggleLocalFullscreen() {
+    const stage = $("mediaStage");
+    if (isLocalFullscreen()) { exitLocalFullscreen(); return; }
+    // Media is already playing; expanding the stage leaves the video source untouched.
+    // Safari on iOS may not fullscreen an arbitrary div: use a local CSS overlay instead.
+    if (typeof stage.requestFullscreen === "function") {
+      try {
+        await stage.requestFullscreen();
+        syncFullscreenControls();
+        return;
+      } catch (_) { /* Fall back to an in-page full-screen stage. */ }
+    }
+    stage.classList.add("fullscreen-fallback");
+    syncFullscreenControls();
+  }
   function closeCamera() {
+    exitLocalFullscreen();
     destroyMedia(); if ($("viewer").open) $("viewer").close();
   }
   function saveCustom(cam) {
@@ -552,7 +588,15 @@
       if (gpsFollow && gpsLastFix) map.panTo(gpsLastFix, {animate:true});
     });
     $("closeViewer").addEventListener("click",closeCamera);
-    $("viewer").addEventListener("close",destroyMedia);
+    $("fullscreenBtn").addEventListener("click",toggleLocalFullscreen);
+    $("exitFullscreenBtn").addEventListener("click",exitLocalFullscreen);
+    document.addEventListener("fullscreenchange",syncFullscreenControls);
+    document.addEventListener("keydown",(event) => {
+      if (event.key === "Escape" && $("mediaStage").classList.contains("fullscreen-fallback")) {
+        event.preventDefault(); event.stopPropagation(); exitLocalFullscreen();
+      }
+    },true);
+    $("viewer").addEventListener("close",() => { exitLocalFullscreen(); destroyMedia(); });
     $("viewer").addEventListener("click",(event) => { if (event.target === $("viewer")) closeCamera(); });
     $("playBtn").addEventListener("click",playLive);
     $("snapshotBtn").addEventListener("click",showSnapshot);
