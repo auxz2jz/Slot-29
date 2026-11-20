@@ -11,24 +11,24 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="./styles.css?v=0.4">
+  <link rel="stylesheet" href="./styles.css?v=0.5">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.4</span></h1><p>Public camera feeds · independent viewer</p></div></div>
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.5</span></h1><p>Public camera feeds · independent viewer</p></div></div>
       <div class="top-actions">
         <button id="nearBtn" type="button" aria-pressed="false" title="Start live GPS location on this map">◎ Start GPS</button>
         <button id="addBtn" class="primary" title="Add an authorized public camera">＋ <span>Add camera</span></button>
       </div>
     </header>
     <section class="controls" aria-label="Camera filters">
-      <label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" autocomplete="off" placeholder="Search road, city, camera, source…" aria-label="Search cameras"></label>
+      <label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" autocomplete="off" placeholder="Search all California cameras: road, city, source…" aria-label="Search across all camera districts"></label>
       <label class="select-wrap"><span>Source</span><select id="sourceFilter" aria-label="Filter by source">
         <option value="all">All sources</option><option value="caltrans">Caltrans</option><option value="alertca">ALERTCalifornia</option><option value="caloes">Cal OES / other</option><option value="custom">My added cameras</option><option value="favorites">★ Favorites</option>
       </select></label>
       <label class="select-wrap"><span>Caltrans</span><select id="district" aria-label="Filter Caltrans cameras by district"><option value="all" selected>All California · 12 districts</option><option value="6">District 6 · Madera / Fresno</option><option value="10">District 10 · Merced</option><option value="1">District 1 · North Coast</option><option value="2">District 2 · Northern CA</option><option value="3">District 3 · Sacramento</option><option value="4">District 4 · Bay Area</option><option value="5">District 5 · Central Coast</option><option value="7">District 7 · Los Angeles</option><option value="8">District 8 · Inland Empire</option><option value="9">District 9 · Eastern Sierra</option><option value="11">District 11 · San Diego</option><option value="12">District 12 · Orange County</option></select></label>
-      <button id="refreshBtn" title="Reload camera locations from public sources">↻ Refresh</button>
+      <button id="allCamerasBtn" class="all-cameras-btn" type="button" title="Show every camera source across all California districts">◉ All cameras</button><button id="refreshBtn" title="Reload camera locations from public sources">↻ Refresh</button>
       <button id="localBtn" title="Zoom to Madera and Highway 99 cameras">⌖ Madera</button><button id="dosPalosBtn" title="Zoom to Dos Palos and Highway 152">⌖ Dos Palos</button>
     </section>
     <div class="workarea">
@@ -75,6 +75,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
-  <script src="./app.js?v=0.4" defer></script>
+  <script src="./app.js?v=0.5" defer></script>
 </body>
 </html>
