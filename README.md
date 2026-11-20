@@ -4,7 +4,7 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 
 ## Features
 - Interactive OpenStreetMap/Leaflet map, marker clusters, search, source colors, and camera list
-- **All Caltrans districts** selected by default, with individual filters for Districts 1–12 (District 6 = Madera, District 10 = Merced). Requests up to three feeds in parallel and places nearby cameras first.
+- **All camera sources + all 12 Caltrans districts** selected by default, including after browser form restoration. All district directories load regardless of the selected display filter, with up to three concurrent requests; district changes are instant local filters rather than additional downloads. **All cameras** button clears source/district/map-only filters. **Search always searches statewide**, even if an individual district is selected.
 - Corrected Caltrans camera JSON filenames to the official zero-padded D01–D09 scheme; includes fallback to official Caltrans GIS data where needed.
 - **Madera** and **Dos Palos** map shortcuts, plus GPS marker, map-position search and nearby-sorted results.
 - For performance, only camera pins inside/near the current visible map view are rendered; lists can still search all loaded California cameras.
@@ -14,7 +14,7 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 - Add a manually verified, **public and authorized** camera on the map, stored only in your browser
 - One-camera-at-a-time playback to conserve phone data; locally saved favorites
 - **Full-screen camera viewing in the same website:** Tap **⛶ Full screen** in the camera viewer to expand its currently playing HLS video or image. Tap **✕ Exit full screen** or the browser Back/Escape control to return to the player and map. No redirect to Caltrans or an outside provider is required. Uses the browser Fullscreen API where available, with an in-page overlay fallback (including browsers that disallow fullscreen for non-video elements).
-- **Opt-in live GPS**: Start GPS shows your blue location marker and a radius representing reported horizontal accuracy; map initially centers on you and follows subsequent movement. Drag the map to pause following; tap **Follow me** to resume. **Stop GPS** removes your marker and stops position updates.
+- **Opt-in persistent GPS while the page is active**: Start GPS shows a blue marker and GPS accuracy circle, follows movement and stores *only* the preference that GPS is enabled. The site attempts to resume on reload if geolocation permission is still granted. A watchdog polls/restarts a stalled watch and requests a fresh GPS reading after returning to the foreground. Drag map to stop following; **Follow me** resumes centering. **Stop GPS** disables stored preference and removes your marker.
 - Display source and stream type so a camera is not mistaken for Caltrans
 
 ## Try it
@@ -32,12 +32,12 @@ Or use a static HTTP server locally, e.g. `python -m http.server 8000`, and visi
 
 Public listings are **not** physical camera IP addresses. A camera can be in the directory but have no playable stream. Providers may change streams, restrict browser playback (CORS), or take devices offline. The app doesn't bypass authorization, authentication or access restrictions, doesn't save video, and never scans camera networks. If an external provider prevents embedding, use **Open provider page** or **Open feed**.
 
-**GPS privacy and requirements:** Location permission is requested only after tapping **Start GPS**. GPS uses the browser's `watchPosition()` while this page is open (it does not promise background tracking). Coordinates are not saved in GitHub or browser storage and are not sent to camera endpoints; however, as with any slippy map, tile servers can infer the viewed geographic area from the map tiles requested. Press **Stop GPS** to clear the location marker and stop updates. GPS requires HTTPS or localhost, location permission, and OS/browser location services. Accuracy is a browser estimate, not a navigation guarantee.
+**GPS privacy and requirements:** Location permission is requested after tapping **Start GPS**; a later reload may resume without prompting if the browser permission is still granted. GPS uses the browser's `watchPosition()` and periodic foreground checks while this page is active (**not guaranteed to operate while the screen is off or the browser is backgrounded**). Coordinates are not saved in GitHub or browser storage and are not sent to camera endpoints; only the on/off preference is stored; however, as with any slippy map, tile servers can infer the viewed geographic area from the map tiles requested. Press **Stop GPS** to clear the location marker and stop updates. GPS requires HTTPS or localhost, location permission, and OS/browser location services. Accuracy is a browser estimate, not a navigation guarantee.
 
 No API keys, backend, or user accounts are required for the initial public sources. The browser connects to the agencies' endpoints, so connectivity/agency policies affect reliability. Never store sensitive personal or company camera URLs in a public repo. Custom entries/favorites stay in this device's localStorage.
 
 ## Status
-Prototype v0.4 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+Prototype v0.5 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
 
 ## Camera data troubleshooting
 
