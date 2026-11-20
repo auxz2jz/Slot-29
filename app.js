@@ -336,7 +336,8 @@
   }
   function filtered() {
     const bounds = map.getBounds();
-    return allCameras().filter((c) => sourceMatches(c) && textMatches(c) && (!onlyWithinMap || bounds.contains([c.lat,c.lng])));
+    const searching = $("search").value.trim().length > 0;
+    return allCameras().filter((c) => sourceMatches(c) && textMatches(c) && (searching || !onlyWithinMap || bounds.contains([c.lat,c.lng])));
   }
   function distanceFromCenter(cam) {
     const p = map.getCenter(), dy = cam.lat - p.lat, dx = (cam.lng - p.lng) * Math.cos(p.lat * Math.PI / 180);
@@ -751,6 +752,7 @@
     $("allCamerasBtn").addEventListener("click",() => {
       $("district").value = "all";
       $("sourceFilter").value = "all";
+      $("search").value = "";
       $("onlyViewBtn").setAttribute("aria-pressed", "false");
       $("onlyViewBtn").classList.remove("active");
       $("onlyViewBtn").textContent = "☐ In map";
