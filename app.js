@@ -1,4 +1,4 @@
-/* Open Camera Map v0.6 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.7 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
@@ -32,6 +32,7 @@
   let favorites = new Set(safeRead(STORAGE_FAV, []));
   let selected = null, currentHls = null, currentTimer = null;
   let playerGeneration = 0, streamCooldownUntil = 0;
+  let streamCheckController = null, streamCheckSession = 0;
   const playbackLog = [];
   const MAX_PLAYBACK_LOG = 35;
   let loadSeq = 0, othersSeq = 0, delayedOthers = 0, toastTimer = 0;
@@ -592,10 +593,71 @@
     }
 
   }
+  // A single GET to the operator-published HLS playlist, only when the user taps Test.
+  // No camera IP discovery, no CORS bypass, no proxy and no automatic retry flood.
+  async function testStreamConnection() {
+    if (!selected) return;
+    const url = selected.stream;
+    const kind = selected.kind;
+    if (kind !== "hls" && kind !== "mp4") {
+      setMediaStatus("This listing has no testable public HLS/MP4 stream. Try its still image or provider page.");
+      recordPlayback("test-not-applicable","No direct HLS/MP4 stream");
+      return;
+    }
+    if (Date.now() < streamCooldownUntil) {
+      setMediaStatus("Waiting after provider rate limit; don't repeat requests yet.");
+      return;
+    }
+    if (streamCheckController) { streamCheckController.abort(); streamCheckController = null; }
+    const controller = new AbortController();
+    streamCheckController = controller;
+    const session = ++streamCheckSession;
+    $("testStreamBtn").disabled = true;
+    $("testStreamBtn").textContent = "Testing…";
+    setMediaStatus("Testing the provider's public " + (kind === "hls" ? "HLS playlist" : "MP4 endpoint") + "…");
+    recordPlayback("test-start","Single public request");
+    const timeout = setTimeout(() => controller.abort(),12000);
+    try {
+      const response = await fetch(url,{method:"GET",mode:"cors",credentials:"omit",cache:"no-store",signal:controller.signal});
+      if (session !== streamCheckSession) return;
+      const status = response.status;
+      recordPlayback("test-http",String(status) + " " + response.statusText);
+      if (status === 429 || status === 403 || status === 401 || !response.ok) {
+        setMediaStatus(describeStreamError(status,"Test request"));
+        return;
+      }
+      if (kind === "hls") {
+        const playlist = await response.text();
+        if (session !== streamCheckSession) return;
+        if (!playlist.trimStart().startsWith("#EXTM3U")) {
+          recordPlayback("test-invalid-playlist","HTTP success but not a valid M3U8 header");
+          setMediaStatus("Provider responded, but the result was not an HLS playlist. The feed URL may be stale.");
+          return;
+        }
+      } else if (response.body && typeof response.body.cancel === "function") {
+        await response.body.cancel();
+      }
+      recordPlayback("test-ok","HTTP " + status + ", browser allowed public request");
+      setMediaStatus("Public stream responds (HTTP " + status + "). If video still won't play, examine HLS segment requests, codecs or browser playback errors. This test does not guarantee video playback.");
+    } catch (error) {
+      if (session !== streamCheckSession) return;
+      const reason = controller.signal.aborted ? "Test timed out (12 seconds)" :
+        "Fetch failed in browser (possible CORS restriction, DNS, TLS, cellular network or blocked server)";
+      recordPlayback("test-failed",reason + " · " + (error && error.name || "unknown"));
+      setMediaStatus(reason + ". Compare snapshot and direct feed in the same browser.");
+    } finally {
+      clearTimeout(timeout);
+      if (session === streamCheckSession) {
+        streamCheckController = null;
+        $("testStreamBtn").disabled = false;
+        $("testStreamBtn").textContent = "⌁ Test feed";
+      }
+    }
+  }
   function copyPlaybackDiagnostics() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     const payload = [
-      "Open Camera Map v0.6 · playback diagnostics",
+      "Open Camera Map v0.7 · playback diagnostics",
       "Generated: " + new Date().toISOString(),
       "Browser: " + navigator.userAgent,
       "Connection: " + (connection && connection.effectiveType || "unavailable"),
@@ -615,6 +677,10 @@
   }
   function openCamera(cam) {
     exitLocalFullscreen();
+    streamCheckSession++;
+    if (streamCheckController) { streamCheckController.abort(); streamCheckController = null; }
+    $("testStreamBtn").disabled = false;
+    $("testStreamBtn").textContent = "⌁ Test feed";
     selected = cam; destroyMedia();
     $("viewTag").replaceWith(tag(cam.source));
     // The replaced badge must retain its stable ID for future selections.
@@ -624,6 +690,7 @@
     $("favBtn").textContent = favorites.has(cam.id) ? "★ Favorited" : "☆ Favorite";
     $("playBtn").textContent = "▶ Play live";
     $("playBtn").disabled = !["hls","mjpeg","mp4"].includes(cam.kind);
+    $("testStreamBtn").disabled = !["hls","mp4"].includes(cam.kind);
     $("snapshotBtn").disabled = !(cam.snapshot || cam.kind === "image");
     $("removeCustom").hidden = cam.source !== "custom";
     setExternalLink("directLink",cam.stream || cam.snapshot);
@@ -671,6 +738,10 @@
   }
   function closeCamera() {
     exitLocalFullscreen();
+    streamCheckSession++;
+    if (streamCheckController) { streamCheckController.abort(); streamCheckController = null; }
+    $("testStreamBtn").disabled = false;
+    $("testStreamBtn").textContent = "⌁ Test feed";
     destroyMedia(); if ($("viewer").open) $("viewer").close();
   }
   function saveCustom(cam) {
@@ -945,6 +1016,7 @@
     $("viewer").addEventListener("click",(event) => { if (event.target === $("viewer")) closeCamera(); });
     $("playBtn").addEventListener("click",playLive);
     $("copyPlaybackBtn").addEventListener("click",copyPlaybackDiagnostics);
+    $("testStreamBtn").addEventListener("click",testStreamConnection);
     $("snapshotBtn").addEventListener("click",showSnapshot);
     $("favBtn").addEventListener("click",() => {
       if (!selected) return;
