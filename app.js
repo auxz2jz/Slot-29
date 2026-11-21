@@ -1,4 +1,4 @@
-/* Open Camera Map v0.5 - public/authorized sources only. No hidden camera discovery. */
+/* Open Camera Map v0.6 - public/authorized sources only. No hidden camera discovery. */
 (function () {
   "use strict";
 
@@ -31,6 +31,9 @@
   const GPS_STALE_MS = 60000;
   let favorites = new Set(safeRead(STORAGE_FAV, []));
   let selected = null, currentHls = null, currentTimer = null;
+  let playerGeneration = 0, streamCooldownUntil = 0;
+  const playbackLog = [];
+  const MAX_PLAYBACK_LOG = 35;
   let loadSeq = 0, othersSeq = 0, delayedOthers = 0, toastTimer = 0;
   let onlyWithinMap = false, placingPin = false;
   let cluster;
@@ -405,13 +408,48 @@
     }
     updateStatus();
   }
+  function recordPlayback(event, detail) {
+    playbackLog.push({
+      at:new Date().toISOString(), event:String(event),
+      camera:selected ? selected.name : "none",
+      operator:selected ? selected.operator : "unknown",
+      detail:String(detail || "").slice(0,220)
+    });
+    if (playbackLog.length > MAX_PLAYBACK_LOG) playbackLog.shift();
+  }
+  function describeStreamError(code, detail) {
+    const n = Number(code) || 0;
+    if (n === 429) {
+      streamCooldownUntil = Date.now() + 30000;
+      return "HTTP 429: provider rate limit. Avoid repeated attempts; retry after 30 seconds.";
+    }
+    if (n === 403 || n === 401) return "HTTP " + n + ": provider denied browser access. This feed may not allow third-party playback.";
+    if (n === 404 || n === 410) return "HTTP " + n + ": stream may be offline or its link has changed.";
+    if (n >= 500) return "HTTP " + n + ": provider server error. Try again later.";
+    if (n) return "HTTP " + n + ": stream request failed.";
+    return "Network or stream playback error" + (detail ? " (" + detail + ")" : "") + ". It may be CORS, a dropped connection, or an unavailable feed.";
+  }
   function destroyMedia() {
-    if (currentTimer) clearInterval(currentTimer);
+    playerGeneration++;
+    if (currentTimer !== null) clearInterval(currentTimer);
     currentTimer = null;
-    if (currentHls) { currentHls.destroy(); currentHls = null; }
-    const vid = $("mediaBox").querySelector("video");
-    if (vid) { vid.pause(); vid.removeAttribute("src"); vid.load(); }
-    $("mediaBox").replaceChildren();
+    // HLS has separate manifest/segment network controllers. Stop before freeing the player.
+    const oldHls = currentHls;
+    currentHls = null;
+    if (oldHls) {
+      try { oldHls.stopLoad(); } catch (_) {}
+      try { oldHls.detachMedia(); } catch (_) {}
+      try { oldHls.destroy(); } catch (_) {}
+    }
+    const box = $("mediaBox");
+    const videos = Array.from(box.querySelectorAll("video"));
+    videos.forEach((vid) => {
+      try { vid.pause(); } catch (_) {}
+      vid.removeAttribute("src");
+      try { vid.load(); } catch (_) {}
+    });
+    Array.from(box.querySelectorAll("img")).forEach((img) => { img.removeAttribute("src"); });
+    box.replaceChildren();
   }
   function setMediaStatus(message) { $("mediaStatus").textContent = message; }
   function snapshotURL(url) {
@@ -423,6 +461,7 @@
   function showSnapshot() {
     if (!selected) return;
     destroyMedia();
+    const generation = playerGeneration;
     const url = selected.snapshot || (["image","mjpeg"].includes(selected.kind) ? selected.stream : "");
     if (!url) {
       $("mediaBox").append(el("p","","No public still image published for this camera. Use the provider link below."));
@@ -431,50 +470,145 @@
     }
     const image = el("img"); image.alt = selected.name + " camera still image";
     image.referrerPolicy = "no-referrer";
-    image.onerror = () => setMediaStatus("Still image failed to load. Try Open direct feed.");
-    image.onload = () => setMediaStatus("Still image · updates depend on the camera operator");
+    image.onerror = () => {
+      if (generation !== playerGeneration) return;
+      recordPlayback("image-error","Image load failed");
+      setMediaStatus("Still image failed to load. Try Open direct feed.");
+    };
+    image.onload = () => {
+      if (generation === playerGeneration) setMediaStatus("Still image · refreshes according to provider availability");
+    };
     image.src = snapshotURL(url);
     $("mediaBox").append(image);
-    const seconds = Math.max(30,Math.min(300,Number(selected.refresh)*60 || 120));
-    currentTimer = setInterval(() => { if ($("viewer").open && selected) image.src = snapshotURL(url); },seconds * 1000);
+    // MJPEG is continuous and doesn't require periodic cache-busting/reopening.
+    if (selected.kind !== "mjpeg") {
+      const seconds = Math.max(30,Math.min(300,Number(selected.refresh)*60 || 120));
+      currentTimer = setInterval(() => {
+        if (generation === playerGeneration && $("viewer").open && selected) image.src = snapshotURL(url);
+      },seconds * 1000);
+    }
   }
   function playLive() {
     if (!selected) return;
+    if (Date.now() < streamCooldownUntil) {
+      const remaining = Math.ceil((streamCooldownUntil - Date.now()) / 1000);
+      setMediaStatus("The provider asked us to slow down. Try again in " + remaining + " seconds.");
+      return;
+    }
     destroyMedia();
+    const generation = playerGeneration;
     const url = selected.stream;
     if (selected.kind === "image" || selected.kind === "mjpeg") { showSnapshot(); return; }
     if (selected.kind !== "hls" && selected.kind !== "mp4") {
       $("mediaBox").append(el("p","","This listing provides a provider webpage, not a directly playable public stream."));
-      setMediaStatus("Click Open provider page to view the camera.");
+      setMediaStatus("This camera has no direct video published. Use the operator's page.");
       return;
     }
     const video = el("video");
     video.controls = true; video.autoplay = true; video.muted = true;
-    video.playsInline = true; video.preload = "none";
-    video.setAttribute("aria-label",selected.name + " public video feed");
-    video.addEventListener("error",() => setMediaStatus("Stream unavailable or browser access blocked; try Open direct feed."));
+    video.playsInline = true; video.preload = "metadata";
+    video.setAttribute("aria-label", selected.name + " public video feed");
+    video.addEventListener("playing",() => {
+      if (generation !== playerGeneration) return;
+      $("playBtn").textContent = "↻ Restart live";
+      recordPlayback("playing","Video began playing");
+      setMediaStatus("Live stream playing");
+    });
+    video.addEventListener("waiting",() => {
+      if (generation === playerGeneration) setMediaStatus("Buffering live video…");
+    });
+    video.addEventListener("error",() => {
+      if (generation !== playerGeneration) return;
+      const code = video.error && video.error.code || 0;
+      recordPlayback("video-error","HTML video MediaError " + code);
+      setMediaStatus("Browser video error " + code + ". Try Restart live or a different camera.");
+      $("playBtn").textContent = "↻ Retry live";
+    });
     $("mediaBox").append(video);
+    $("playBtn").textContent = "↻ Restart live";
+    recordPlayback("open","Opening " + selected.kind + " feed");
     if (selected.kind === "mp4" || video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
-      video.play().catch(() => setMediaStatus("Press play on the video to start this stream."));
-    } else if (window.Hls && Hls.isSupported()) {
-      const hls = new Hls({enableWorker:true, lowLatencyMode:true});
-      currentHls = hls;
-      hls.loadSource(url); hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED,() => video.play().catch(() => setMediaStatus("Tap play in the video player.")));
-      hls.on(Hls.Events.ERROR,(_,detail) => {
-        if (detail.fatal) {
-          setMediaStatus("Stream could not be played (" + detail.type + "). Try Open direct feed.");
-          hls.destroy(); if (currentHls === hls) currentHls = null;
+      video.play().catch((error) => {
+        if (generation === playerGeneration) {
+          recordPlayback("play-rejected",error && error.name || "unknown");
+          setMediaStatus("Tap play on the video controls; the browser blocked automatic playback.");
         }
       });
+    } else if (window.Hls && Hls.isSupported()) {
+      let hls;
+      try {
+        hls = new Hls({
+          enableWorker:true,
+          lowLatencyMode:false,
+          maxBufferLength:15,
+          maxMaxBufferLength:30,
+          backBufferLength:8,
+          capLevelToPlayerSize:true
+        });
+        currentHls = hls;
+        hls.on(Hls.Events.MANIFEST_PARSED,() => {
+          if (generation !== playerGeneration) return;
+          recordPlayback("manifest","Playlist loaded");
+          video.play().catch((error) => {
+            if (generation === playerGeneration) {
+              recordPlayback("play-rejected",error && error.name || "unknown");
+              setMediaStatus("Tap play on the video controls.");
+            }
+          });
+        });
+        hls.on(Hls.Events.ERROR,(_,detail) => {
+          if (generation !== playerGeneration) return;
+          const status = detail && detail.response && (detail.response.code || detail.response.status) || 0;
+          const errorType = detail && detail.details || "unknown";
+          if (!detail.fatal && !status) return;
+          recordPlayback(detail.fatal ? "hls-fatal" : "hls-network",errorType + " HTTP " + status);
+          if (detail.fatal) {
+            setMediaStatus(describeStreamError(status,errorType) + " Try another camera or tap Retry live.");
+            $("playBtn").textContent = "↻ Retry live";
+            // Cancel this player's ongoing requests. No automatic loop against failing feeds.
+            try { hls.stopLoad(); } catch (_) {}
+            try { hls.detachMedia(); } catch (_) {}
+            try { hls.destroy(); } catch (_) {}
+            if (currentHls === hls) currentHls = null;
+          } else if (status === 429) {
+            setMediaStatus(describeStreamError(status,errorType));
+          }
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+      } catch (error) {
+        recordPlayback("hls-start-error",error && error.message || "unknown");
+        if (hls) {
+          try { hls.destroy(); } catch (_) {}
+        }
+        if (currentHls === hls) currentHls = null;
+        setMediaStatus("Unable to start video player; try another camera.");
+      }
     } else {
-      setMediaStatus("This browser cannot play HLS; open the direct stream in a compatible player.");
+      setMediaStatus("This browser cannot play HLS directly. A compatible video player is required.");
+      recordPlayback("unsupported","HLS playback unsupported by browser");
       video.remove();
-      $("mediaBox").append(el("p","","HLS playback is unsupported in this browser."));
+      $("mediaBox").append(el("p","","HLS video unsupported in this browser."));
+    }
+    if (!$("mediaStatus").textContent) setMediaStatus("Connecting to one live camera…");
+  }
+  function copyPlaybackDiagnostics() {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const payload = [
+      "Open Camera Map v0.6 · playback diagnostics",
+      "Generated: " + new Date().toISOString(),
+      "Browser: " + navigator.userAgent,
+      "Connection: " + (connection && connection.effectiveType || "unavailable"),
+      "Last player status: " + $("mediaStatus").textContent,
+      "Events (newest last; feed URLs and GPS excluded):",
+      ...playbackLog.map((e) => e.at + " | " + e.event + " | " + e.operator + " | " + e.camera + " | " + e.detail)
+    ].join("\n");
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      setMediaStatus("Clipboard unavailable; browser must be HTTPS.");
       return;
     }
-    setMediaStatus("Connecting to live public feed… no recording.");
+    navigator.clipboard.writeText(payload).then(() => toast("Playback diagnostics copied — paste into chat")).catch(() => toast("Unable to copy diagnostics"));
   }
   function setExternalLink(id,url) {
     const a = $(id), safe = validUrl(url);
@@ -489,6 +623,7 @@
     $("viewTitle").textContent = cam.name;
     $("viewMeta").textContent = [cam.operator,cam.location,cam.status].filter(Boolean).join(" · ");
     $("favBtn").textContent = favorites.has(cam.id) ? "★ Favorited" : "☆ Favorite";
+    $("playBtn").textContent = "▶ Play live";
     $("playBtn").disabled = !["hls","mjpeg","mp4"].includes(cam.kind);
     $("snapshotBtn").disabled = !(cam.snapshot || cam.kind === "image");
     $("removeCustom").hidden = cam.source !== "custom";
@@ -810,6 +945,7 @@
     $("viewer").addEventListener("close",() => { exitLocalFullscreen(); destroyMedia(); });
     $("viewer").addEventListener("click",(event) => { if (event.target === $("viewer")) closeCamera(); });
     $("playBtn").addEventListener("click",playLive);
+    $("copyPlaybackBtn").addEventListener("click",copyPlaybackDiagnostics);
     $("snapshotBtn").addEventListener("click",showSnapshot);
     $("favBtn").addEventListener("click",() => {
       if (!selected) return;
