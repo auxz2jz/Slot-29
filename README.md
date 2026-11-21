@@ -14,7 +14,7 @@ A mobile-first personal map of **officially published, public camera feeds**. St
 - Add a manually verified, **public and authorized** camera on the map, stored only in your browser
 - One-camera-at-a-time playback to conserve phone data; locally saved favorites
 - More defensive HLS switching: stop old playlist/segment downloads, detach old video media, destroy the old stream controller, and keep only the selected camera active. Live HLS uses capped buffers to reduce phone memory usage.
-- **Copy playback diagnostics** provides recent video events, browser/connection details and HTTP error codes without revealing stream URLs or GPS. There is an explicit manual retry; HTTP 429 triggers a 30-second cooldown rather than aggressive reconnect attempts.
+- **Test feed** checks one operator-published HLS playlist in the browser and reports HTTP status, invalid playlists, timeout or fetch/CORS/network failure. A successful playlist does not guarantee playable video segments or compatible codecs. **Copy playback diagnostics** includes test results and recent video events without stream URLs or GPS. There is manual retry and a 30-second cooldown after HTTP 429.
 - **Full-screen camera viewing in the same website:** Tap **⛶ Full screen** in the camera viewer to expand its currently playing HLS video or image. Tap **✕ Exit full screen** or the browser Back/Escape control to return to the player and map. No redirect to Caltrans or an outside provider is required. Uses the browser Fullscreen API where available, with an in-page overlay fallback (including browsers that disallow fullscreen for non-video elements).
 - **Opt-in persistent GPS while the page is active**: Start GPS shows a blue marker and GPS accuracy circle, follows movement and stores *only* the preference that GPS is enabled. The site attempts to resume on reload if geolocation permission is still granted. A watchdog polls/restarts a stalled watch and requests a fresh GPS reading after returning to the foreground. Drag map to stop following; **Follow me** resumes centering. **Stop GPS** disables stored preference and removes your marker.
 - Display source and stream type so a camera is not mistaken for Caltrans
@@ -39,7 +39,7 @@ Public listings are **not** physical camera IP addresses. A camera can be in the
 No API keys, backend, or user accounts are required for the initial public sources. The browser connects to the agencies' endpoints, so connectivity/agency policies affect reliability. Never store sensitive personal or company camera URLs in a public repo. Custom entries/favorites stay in this device's localStorage.
 
 ## Status
-Prototype v0.6 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
+Prototype v0.7 — browser/device testing and external stream verification still needed. In a static Github Pages site, some HLS feeds may fail because of CORS. A later opt-in server proxy can address genuine compatibility issues where permitted, without attempting to access private cameras.
 
 ## Camera data troubleshooting
 
@@ -48,3 +48,7 @@ The primary source uses https://cwwp2.dot.ca.gov/data/d6/cctv/cctvStatusD06.json
 ## Diagnosing failed camera switches
 
 Caltrans' CCTV fair-use policy does not state a public hard limit of three/four connections: https://cwwp2.dot.ca.gov/closed-circuit-television-cameras.html. If three or four cameras work and then all stop, open a camera > Copy playback diagnostics and share the copied log. Errors distinguish HTTP 429 (rate-limited), 403 (access denied), 404 (missing feed), 5xx (server failure), native playback errors, and HLS manifest/network errors. The app doesn't bypass provider restrictions and never automatically flood-retries a failed feed. When testing, also compare Chrome cellular versus Wi-Fi and whether a browser refresh restores playback. Diagnoses are indicative; external server behavior cannot be proven from frontend code alone.
+
+### Troubleshooting steps for v0.7
+
+On phone: (1) choose camera, press Play live; (2) if it fails, tap Test feed once; (3) try Still image; (4) Copy playback diagnostics and paste into the chat. If Test feed reports HTTP 429, do not keep retrying. If a playlist responds 200 but video cannot play, the problem is farther into the HLS playback chain. The test works only for CORS-authorized public playlist requests: an ordinary browser fetch can fail even if the same URL plays in a standalone native player. The website cannot prove a server-side connection quota without the actual server response.
