@@ -52,3 +52,5 @@
 .playback-tools button{font-size:11px;padding:6px 9px}
 .playback-tools span{font-size:11px;color:#9eb4ce}
 @media(max-width:680px){.playback-tools{padding:0 9px 8px}.playback-tools button{font-size:10px}}
+
+#testStreamBtn{border-color:#5483a7;color:#c8e6ff}#testStreamBtn:disabled{opacity:.6;cursor:default}
