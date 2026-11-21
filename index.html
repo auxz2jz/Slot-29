@@ -11,12 +11,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="./styles.css?v=0.6">
+  <link rel="stylesheet" href="./styles.css?v=0.7">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.6</span></h1><p>Public camera feeds · independent viewer</p></div></div>
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◉</span><div><h1>Open Camera Map <span class="version">v0.7</span></h1><p>Public camera feeds · independent viewer</p></div></div>
       <div class="top-actions">
         <button id="nearBtn" type="button" aria-pressed="false" title="Start live GPS location on this map">◎ Start GPS</button>
         <button id="addBtn" class="primary" title="Add an authorized public camera">＋ <span>Add camera</span></button>
@@ -53,7 +53,7 @@
     <div class="viewer-bar"><div><span id="viewTag" class="tag"></span><h2 id="viewTitle">Camera</h2><p id="viewMeta"></p></div><button id="closeViewer" class="icon-button" aria-label="Close camera">✕</button></div>
     <div id="mediaStage" class="media-stage"><div id="mediaBox" class="media-box"><p>Select a camera.</p></div><button id="exitFullscreenBtn" type="button" class="exit-fullscreen-btn" hidden aria-label="Exit full screen">✕ Exit full screen</button></div>
     <div class="viewer-actions"><button id="playBtn" class="primary">▶ Play live</button><button id="snapshotBtn">▧ Still image</button><button id="fullscreenBtn" type="button" aria-pressed="false" title="Expand video or snapshot within the website">⛶ Full screen</button><button id="favBtn">☆ Favorite</button></div>
-    <div class="playback-tools"><button id="copyPlaybackBtn" type="button" title="Copy video player errors and recent connection events (without feed URLs or GPS)">⧉ Copy playback diagnostics</button><span>Use this if streams stop after switching cameras.</span></div>
+    <div class="playback-tools"><button id="testStreamBtn" type="button" title="Test one public HLS playlist request in your browser">⌁ Test feed</button><button id="copyPlaybackBtn" type="button" title="Copy video player errors and recent connection events (without feed URLs or GPS)">⧉ Copy playback diagnostics</button><span>If the cameras stop loading, test one feed, then copy diagnostics.</span></div>
     <p id="mediaStatus" class="media-status" role="status"></p>
     <div class="viewer-links"><a id="directLink" target="_blank" rel="noopener noreferrer" hidden>Open direct feed ↗</a><a id="operatorLink" target="_blank" rel="noopener noreferrer" hidden>Open provider page ↗</a><button id="removeCustom" class="danger-text" hidden>Remove my camera</button></div>
   </dialog>
@@ -76,6 +76,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
-  <script src="./app.js?v=0.6" defer></script>
+  <script src="./app.js?v=0.7" defer></script>
 </body>
 </html>
