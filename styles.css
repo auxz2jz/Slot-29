@@ -46,3 +46,9 @@
 .all-cameras-btn{background:#164a79;border-color:#398cce;color:#eaf5ff;font-weight:700}
 .all-cameras-btn:hover{background:#216199}
 @media(max-width:680px){.all-cameras-btn{font-size:11px;padding:7px}}
+
+/* v0.6 diagnostic button within the existing camera viewer */
+.playback-tools{display:flex;align-items:center;gap:10px;padding:0 16px 10px;flex-wrap:wrap}
+.playback-tools button{font-size:11px;padding:6px 9px}
+.playback-tools span{font-size:11px;color:#9eb4ce}
+@media(max-width:680px){.playback-tools{padding:0 9px 8px}.playback-tools button{font-size:10px}}
