@@ -496,6 +496,7 @@
       return;
     }
     destroyMedia();
+    setMediaStatus("Connecting to one live camera…");
     const generation = playerGeneration;
     const url = selected.stream;
     if (selected.kind === "image" || selected.kind === "mjpeg") { showSnapshot(); return; }
@@ -563,16 +564,14 @@
           const errorType = detail && detail.details || "unknown";
           if (!detail.fatal && !status) return;
           recordPlayback(detail.fatal ? "hls-fatal" : "hls-network",errorType + " HTTP " + status);
-          if (detail.fatal) {
+          if (detail.fatal || status === 429 || status === 403 || status === 401) {
             setMediaStatus(describeStreamError(status,errorType) + " Try another camera or tap Retry live.");
             $("playBtn").textContent = "↻ Retry live";
-            // Cancel this player's ongoing requests. No automatic loop against failing feeds.
+            // Cancel even nonfatal 429/403 responses so HLS cannot keep hammering the provider.
             try { hls.stopLoad(); } catch (_) {}
             try { hls.detachMedia(); } catch (_) {}
             try { hls.destroy(); } catch (_) {}
             if (currentHls === hls) currentHls = null;
-          } else if (status === 429) {
-            setMediaStatus(describeStreamError(status,errorType));
           }
         });
         hls.loadSource(url);
@@ -591,7 +590,7 @@
       video.remove();
       $("mediaBox").append(el("p","","HLS video unsupported in this browser."));
     }
-    if (!$("mediaStatus").textContent) setMediaStatus("Connecting to one live camera…");
+
   }
   function copyPlaybackDiagnostics() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
